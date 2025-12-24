@@ -70,17 +70,26 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({
                 className={`
           relative w-full p-8 rounded-2xl border-2 border-dashed
           transition-all duration-300 cursor-pointer
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary-400 hover:bg-slate-800/30'}
-          ${isDragging ? 'drop-zone-active border-primary-400 bg-slate-800/50' : 'border-slate-600'}
-          ${selectedFile ? 'border-green-500/50 bg-green-900/10' : ''}
+          ${disabled
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'hover:border-primary-400 hover:bg-slate-100 dark:hover:bg-slate-800/30'
+                    }
+          ${isDragging
+                        ? 'drop-zone-active border-primary-400 bg-slate-100 dark:bg-slate-800/50'
+                        : 'border-slate-300 dark:border-slate-600'
+                    }
+          ${selectedFile
+                        ? 'border-green-500/50 bg-green-50 dark:bg-green-900/10'
+                        : 'bg-white/50 dark:bg-transparent'
+                    }
         `}
             >
                 <div className="flex flex-col items-center justify-center space-y-4">
                     {!selectedFile ? (
                         <>
-                            <div className="w-16 h-16 rounded-full bg-slate-700/50 flex items-center justify-center">
+                            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
                                 <svg
-                                    className="w-8 h-8 text-primary-400"
+                                    className="w-8 h-8 text-primary-500 dark:text-primary-400"
                                     fill="none"
                                     stroke="currentColor"
                                     viewBox="0 0 24 24"
@@ -94,22 +103,22 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({
                                 </svg>
                             </div>
                             <div className="text-center">
-                                <p className="text-lg font-medium text-slate-200">
+                                <p className="text-lg font-medium text-slate-700 dark:text-slate-200">
                                     拖拽视频文件到这里
                                 </p>
-                                <p className="text-sm text-slate-400 mt-1">
+                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                                     或点击选择文件
                                 </p>
                             </div>
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-slate-400 dark:text-slate-500">
                                 支持 MP4, MKV, AVI, MOV, WebM 等格式
                             </p>
                         </>
                     ) : (
                         <>
-                            <div className="w-16 h-16 rounded-full bg-green-900/30 flex items-center justify-center">
+                            <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
                                 <svg
-                                    className="w-8 h-8 text-green-400"
+                                    className="w-8 h-8 text-green-600 dark:text-green-400"
                                     fill="none"
                                     stroke="currentColor"
                                     viewBox="0 0 24 24"
@@ -129,16 +138,16 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({
                                 </svg>
                             </div>
                             <div className="text-center">
-                                <p className="text-lg font-medium text-green-400">
+                                <p className="text-lg font-medium text-green-600 dark:text-green-400">
                                     📹 {videoInfo?.filename || '已选择文件'}
                                 </p>
                                 {videoInfo && (
-                                    <p className="text-sm text-slate-400 mt-1">
+                                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                                         时长: {videoInfo.duration_formatted}
                                     </p>
                                 )}
                             </div>
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-slate-400 dark:text-slate-500">
                                 点击可重新选择文件
                             </p>
                         </>

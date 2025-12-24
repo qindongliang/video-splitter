@@ -4,6 +4,7 @@ import DurationInput from './components/DurationInput';
 import OutputSelector from './components/OutputSelector';
 import ProgressBar from './components/ProgressBar';
 import ResultList from './components/ResultList';
+import ThemeToggle from './components/ThemeToggle';
 import { useVideoSplit } from './hooks/useVideoSplit';
 import './index.css';
 
@@ -45,15 +46,21 @@ function App() {
   const canSplit = selectedFile && outputDir && videoInfo && !isProcessing && !isLoading;
 
   return (
-    <div className="min-h-screen p-6 flex flex-col">
+    <div className="min-h-screen p-6 flex flex-col transition-colors duration-300">
       {/* Header */}
-      <header className="text-center mb-8">
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-400 to-cyan-400 bg-clip-text text-transparent">
-          🎬 Video Splitter
-        </h1>
-        <p className="text-slate-400 mt-2">
-          按指定时长自动切分视频
-        </p>
+      <header className="flex items-center justify-between mb-8">
+        <div className="flex-1" />
+        <div className="text-center">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-400 to-cyan-400 bg-clip-text text-transparent">
+            🎬 Video Splitter
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2">
+            按指定时长自动切分视频
+          </p>
+        </div>
+        <div className="flex-1 flex justify-end">
+          <ThemeToggle />
+        </div>
       </header>
 
       {/* Main Content */}
@@ -97,8 +104,8 @@ function App() {
 
         {/* Error */}
         {error && (
-          <div className="glass rounded-xl p-4 border border-red-500/30 bg-red-900/10">
-            <p className="text-red-400 text-sm">
+          <div className="glass rounded-xl p-4 border border-red-500/30 bg-red-900/10 dark:bg-red-900/10">
+            <p className="text-red-500 dark:text-red-400 text-sm">
               ❌ 错误: {error}
             </p>
           </div>
@@ -121,7 +128,7 @@ function App() {
             transition-all duration-300 transform
             ${canSplit
               ? 'bg-gradient-to-r from-primary-600 to-cyan-600 text-white hover:from-primary-500 hover:to-cyan-500 hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-primary-500/25'
-              : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+              : 'bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed'
             }
           `}
         >
@@ -152,14 +159,14 @@ function App() {
 
         {/* Info */}
         {videoInfo && !isProcessing && !result && (
-          <p className="text-center text-sm text-slate-500">
+          <p className="text-center text-sm text-slate-500 dark:text-slate-500">
             预计将切分为 {Math.ceil(videoInfo.duration / segmentDuration)} 个片段
           </p>
         )}
       </main>
 
       {/* Footer */}
-      <footer className="text-center mt-8 text-xs text-slate-600">
+      <footer className="text-center mt-8 text-xs text-slate-500 dark:text-slate-600">
         Powered by FFmpeg & Tauri
       </footer>
     </div>
