@@ -42,6 +42,28 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Video",
+    "shortDescription": "视频按时长切分工具",
+    "longDescription": "Video Splitter 是一款简单易用的视频切分工具，可以将长视频按指定时长自动切分成多个片段。使用 FFmpeg 进行无损切分，支持 MP4、MKV、AVI、MOV 等多种格式。",
+    "copyright": "Copyright © 2024",
+    "macOS": {
+      "entitlements": null,
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "wix": null
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": [
+          "ffmpeg"
+        ]
+      }
+    }
   }
 }
