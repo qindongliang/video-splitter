@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface ProgressBarProps {
     progress: number;
     currentSegment: number;
@@ -8,13 +6,13 @@ interface ProgressBarProps {
     isProcessing: boolean;
 }
 
-const ProgressBar: React.FC<ProgressBarProps> = ({
+const ProgressBar = ({
     progress,
     currentSegment,
     totalSegments,
     currentFile,
     isProcessing,
-}) => {
+}: ProgressBarProps) => {
     if (!isProcessing && progress === 0) return null;
 
     return (

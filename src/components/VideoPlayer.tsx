@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface VideoPlayerProps {
@@ -7,7 +7,7 @@ interface VideoPlayerProps {
     onClose?: () => void;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ filePath, title, onClose }) => {
+const VideoPlayer = ({ filePath, title, onClose }: VideoPlayerProps) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);

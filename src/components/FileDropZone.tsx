@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 
@@ -18,12 +18,12 @@ interface DragDropPayload {
     position: { x: number; y: number };
 }
 
-const FileDropZone: React.FC<FileDropZoneProps> = ({
+const FileDropZone = ({
     onFileSelect,
     selectedFile,
     videoInfo,
     disabled = false,
-}) => {
+}: FileDropZoneProps) => {
     const [isDragging, setIsDragging] = useState(false);
 
     // Listen for Tauri drag-drop events

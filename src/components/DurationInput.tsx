@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface DurationInputProps {
     value: number;
     onChange: (value: number) => void;
@@ -16,13 +14,13 @@ const PRESETS = [
     { label: '30分钟', value: 1800, unit: 'seconds' as const },
 ];
 
-const DurationInput: React.FC<DurationInputProps> = ({
+const DurationInput = ({
     value,
     onChange,
     unit,
     onUnitChange,
     disabled = false,
-}) => {
+}: DurationInputProps) => {
     const displayValue = unit === 'minutes' ? Math.floor(value / 60) : value;
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

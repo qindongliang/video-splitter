@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import VideoPlayer from './VideoPlayer';
 
@@ -6,15 +6,13 @@ interface ResultListProps {
     files: string[];
 }
 
-const ResultList: React.FC<ResultListProps> = ({ files }) => {
+const ResultList = ({ files }: ResultListProps) => {
     const [previewFile, setPreviewFile] = useState<string | null>(null);
 
     if (files.length === 0) return null;
 
     const handleOpenFolder = async () => {
         try {
-            // Use revealItemInDir to open the folder in Finder
-            // We reveal the first output file to show the folder
             if (files.length > 0) {
                 await revealItemInDir(files[0]);
             }
@@ -87,7 +85,6 @@ const ResultList: React.FC<ResultListProps> = ({ files }) => {
                 </div>
             </div>
 
-            {/* Video Preview */}
             {previewFile && (
                 <VideoPlayer
                     filePath={previewFile}

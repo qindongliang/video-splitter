@@ -1,4 +1,3 @@
-import React from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 
 interface OutputSelectorProps {
@@ -7,11 +6,11 @@ interface OutputSelectorProps {
     disabled?: boolean;
 }
 
-const OutputSelector: React.FC<OutputSelectorProps> = ({
+const OutputSelector = ({
     value,
     onChange,
     disabled = false,
-}) => {
+}: OutputSelectorProps) => {
     const handleClick = async () => {
         if (disabled) return;
 
