@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import VideoPlayer from './VideoPlayer';
 
 interface ResultListProps {
     files: string[];
 }
 
 const ResultList: React.FC<ResultListProps> = ({ files }) => {
+    const [previewFile, setPreviewFile] = useState<string | null>(null);
+
     if (files.length === 0) return null;
 
     const handleOpenFolder = async () => {
@@ -24,41 +27,74 @@ const ResultList: React.FC<ResultListProps> = ({ files }) => {
         return path.split('/').pop() || path;
     };
 
+    const handlePlayVideo = (filePath: string) => {
+        setPreviewFile(filePath === previewFile ? null : filePath);
+    };
+
     return (
-        <div className="w-full space-y-3 glass rounded-xl p-4">
-            <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-green-600 dark:text-green-400 flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    输出文件 ({files.length} 个)
-                </h3>
-                <button
-                    onClick={handleOpenFolder}
-                    className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-500 dark:hover:text-primary-300 transition-colors flex items-center gap-1"
-                >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                    打开文件夹
-                </button>
+        <div className="w-full space-y-3">
+            <div className="glass rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-green-600 dark:text-green-400 flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        输出文件 ({files.length} 个)
+                    </h3>
+                    <button
+                        onClick={handleOpenFolder}
+                        className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-500 dark:hover:text-primary-300 transition-colors flex items-center gap-1"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        打开文件夹
+                    </button>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                    {files.map((file, index) => (
+                        <div
+                            key={index}
+                            className={`
+                flex items-center justify-between gap-2 text-sm py-2 px-3 rounded-lg
+                transition-colors cursor-pointer
+                ${previewFile === file
+                                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/30'
+                                }
+              `}
+                            onClick={() => handlePlayVideo(file)}
+                        >
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                <span className="truncate" title={file}>
+                                    {getFileName(file)}
+                                </span>
+                            </div>
+                            <button
+                                className="flex-shrink-0 p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                title="播放预览"
+                            >
+                                <svg className="w-4 h-4 text-primary-500" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z" />
+                                </svg>
+                            </button>
+                        </div>
+                    ))}
+                </div>
             </div>
 
-            <div className="max-h-40 overflow-y-auto space-y-1">
-                {files.map((file, index) => (
-                    <div
-                        key={index}
-                        className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 py-1.5 px-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700/30 transition-colors"
-                    >
-                        <svg className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                        <span className="truncate" title={file}>
-                            {getFileName(file)}
-                        </span>
-                    </div>
-                ))}
-            </div>
+            {/* Video Preview */}
+            {previewFile && (
+                <VideoPlayer
+                    filePath={previewFile}
+                    title={getFileName(previewFile)}
+                    onClose={() => setPreviewFile(null)}
+                />
+            )}
         </div>
     );
 };

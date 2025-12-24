@@ -5,6 +5,7 @@ import OutputSelector from './components/OutputSelector';
 import ProgressBar from './components/ProgressBar';
 import ResultList from './components/ResultList';
 import ThemeToggle from './components/ThemeToggle';
+import VideoPlayer from './components/VideoPlayer';
 import { useVideoSplit } from './hooks/useVideoSplit';
 import './index.css';
 
@@ -13,6 +14,7 @@ function App() {
   const [segmentDuration, setSegmentDuration] = useState(300); // 5 minutes default
   const [durationUnit, setDurationUnit] = useState<'seconds' | 'minutes'>('seconds');
   const [outputDir, setOutputDir] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
 
   const {
     videoInfo,
@@ -35,6 +37,7 @@ function App() {
 
   const handleFileSelect = async (path: string) => {
     setSelectedFile(path);
+    setShowPreview(false);
     await loadVideoInfo(path);
   };
 
@@ -72,6 +75,30 @@ function App() {
           videoInfo={videoInfo}
           disabled={isProcessing}
         />
+
+        {/* Video Preview Button & Player */}
+        {selectedFile && videoInfo && (
+          <div className="space-y-4">
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="w-full py-2 rounded-lg glass text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {showPreview ? '隐藏预览' : '预览视频'}
+            </button>
+
+            {showPreview && (
+              <VideoPlayer
+                filePath={selectedFile}
+                title={videoInfo.filename}
+                onClose={() => setShowPreview(false)}
+              />
+            )}
+          </div>
+        )}
 
         {/* Settings */}
         {videoInfo && (

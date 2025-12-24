@@ -1,5 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { listen } from '@tauri-apps/api/event';
 
 interface FileDropZoneProps {
     onFileSelect: (path: string) => void;
@@ -12,6 +13,11 @@ interface FileDropZoneProps {
     disabled?: boolean;
 }
 
+interface DragDropPayload {
+    paths: string[];
+    position: { x: number; y: number };
+}
+
 const FileDropZone: React.FC<FileDropZoneProps> = ({
     onFileSelect,
     selectedFile,
@@ -19,6 +25,42 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({
     disabled = false,
 }) => {
     const [isDragging, setIsDragging] = useState(false);
+
+    // Listen for Tauri drag-drop events
+    useEffect(() => {
+        const unlistenDrop = listen<DragDropPayload>('tauri://drag-drop', (event) => {
+            if (disabled) return;
+
+            const paths = event.payload.paths;
+            if (paths && paths.length > 0) {
+                // Get the first file and check if it's a video
+                const filePath = paths[0];
+                const ext = filePath.split('.').pop()?.toLowerCase();
+                const videoExts = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', 'wmv', 'm4v'];
+
+                if (ext && videoExts.includes(ext)) {
+                    onFileSelect(filePath);
+                }
+            }
+            setIsDragging(false);
+        });
+
+        const unlistenEnter = listen('tauri://drag-enter', () => {
+            if (!disabled) {
+                setIsDragging(true);
+            }
+        });
+
+        const unlistenLeave = listen('tauri://drag-leave', () => {
+            setIsDragging(false);
+        });
+
+        return () => {
+            unlistenDrop.then(fn => fn());
+            unlistenEnter.then(fn => fn());
+            unlistenLeave.then(fn => fn());
+        };
+    }, [disabled, onFileSelect]);
 
     const handleClick = async () => {
         if (disabled) return;
@@ -38,35 +80,10 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({
         }
     };
 
-    const handleDragOver = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        if (!disabled) {
-            setIsDragging(true);
-        }
-    }, [disabled]);
-
-    const handleDragLeave = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-    }, []);
-
-    const handleDrop = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-
-        if (disabled) return;
-
-        // Note: Tauri handles file drops differently
-        // This is mainly for visual feedback
-    }, [disabled]);
-
     return (
         <div className="w-full">
             <div
                 onClick={handleClick}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
                 className={`
           relative w-full p-8 rounded-2xl border-2 border-dashed
           transition-all duration-300 cursor-pointer
