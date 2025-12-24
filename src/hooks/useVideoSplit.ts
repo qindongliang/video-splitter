@@ -1,0 +1,108 @@
+import { useState, useEffect, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+
+interface VideoInfo {
+    path: string;
+    duration: number;
+    duration_formatted: string;
+    filename: string;
+}
+
+interface SplitProgress {
+    current_segment: number;
+    total_segments: number;
+    percentage: number;
+    current_file: string;
+}
+
+interface SplitResult {
+    success: boolean;
+    output_files: string[];
+    error: string | null;
+}
+
+export function useVideoSplit() {
+    const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [progress, setProgress] = useState<SplitProgress | null>(null);
+    const [result, setResult] = useState<SplitResult | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    // Listen for progress events
+    useEffect(() => {
+        const unlisten = listen<SplitProgress>('split-progress', (event) => {
+            setProgress(event.payload);
+        });
+
+        return () => {
+            unlisten.then((fn) => fn());
+        };
+    }, []);
+
+    const loadVideoInfo = useCallback(async (path: string) => {
+        setIsLoading(true);
+        setError(null);
+        setResult(null);
+        setProgress(null);
+
+        try {
+            const info = await invoke<VideoInfo>('get_video_info', { path });
+            setVideoInfo(info);
+        } catch (err) {
+            setError(err as string);
+            setVideoInfo(null);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    const splitVideo = useCallback(async (
+        inputPath: string,
+        outputDir: string,
+        segmentDuration: number
+    ) => {
+        setIsProcessing(true);
+        setError(null);
+        setResult(null);
+        setProgress({
+            current_segment: 0,
+            total_segments: Math.ceil(videoInfo?.duration || 0 / segmentDuration),
+            percentage: 0,
+            current_file: '准备中...',
+        });
+
+        try {
+            const splitResult = await invoke<SplitResult>('split_video_command', {
+                inputPath,
+                outputDir,
+                segmentDuration,
+            });
+            setResult(splitResult);
+        } catch (err) {
+            setError(err as string);
+        } finally {
+            setIsProcessing(false);
+        }
+    }, [videoInfo]);
+
+    const reset = useCallback(() => {
+        setVideoInfo(null);
+        setProgress(null);
+        setResult(null);
+        setError(null);
+    }, []);
+
+    return {
+        videoInfo,
+        isLoading,
+        isProcessing,
+        progress,
+        result,
+        error,
+        loadVideoInfo,
+        splitVideo,
+        reset,
+    };
+}
