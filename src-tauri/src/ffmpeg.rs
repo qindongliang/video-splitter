@@ -57,7 +57,7 @@ pub fn format_duration(seconds: f64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, secs)
 }
 
-/// Split video into segments
+/// Split video into segments using FFmpeg segment muxer
 pub fn split_video(
     app_handle: &AppHandle,
     input_path: &str,
@@ -77,51 +77,63 @@ pub fn split_video(
         .and_then(|s| s.to_str())
         .unwrap_or("mp4");
 
-    let mut output_files = Vec::new();
+    // Emit initial progress
+    let progress = SplitProgress {
+        current_segment: 0,
+        total_segments,
+        percentage: 0.0,
+        current_file: "正在切分...".to_string(),
+    };
+    let _ = app_handle.emit("split-progress", &progress);
 
-    for i in 0..total_segments {
-        let start_time = i * segment_duration;
-        let output_file = format!("{}/{}_{:03}.{}", output_dir, stem, i + 1, extension);
+    // Output pattern for segment files
+    let output_pattern = format!("{}/{}_%03d.{}", output_dir, stem, extension);
 
-        // Emit progress event
-        let progress = SplitProgress {
-            current_segment: i + 1,
-            total_segments,
-            percentage: ((i + 1) as f64 / total_segments as f64) * 100.0,
-            current_file: output_file.clone(),
-        };
-        let _ = app_handle.emit("split-progress", &progress);
+    // Use FFmpeg segment muxer for reliable splitting
+    // -segment_time: duration of each segment
+    // -reset_timestamps 1: reset timestamps for each segment (prevents black frames)
+    // -map 0: include all streams
+    // -c copy: no re-encoding
+    // -break_non_keyframes 0: only break on keyframes (prevents corrupted segments)
+    let output = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i", input_path,
+            "-c", "copy",
+            "-map", "0",
+            "-f", "segment",
+            "-segment_time", &segment_duration.to_string(),
+            "-reset_timestamps", "1",
+            "-break_non_keyframes", "0",
+            &output_pattern,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
 
-        // Run FFmpeg to split segment
-        let output = Command::new("ffmpeg")
-            .args([
-                "-y",  // Overwrite output
-                "-i", input_path,
-                "-ss", &start_time.to_string(),
-                "-t", &segment_duration.to_string(),
-                "-c", "copy",  // No re-encoding
-                "-map", "0",
-                "-avoid_negative_ts", "make_zero",
-                &output_file,
-            ])
-            .output()
-            .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            // FFmpeg often writes warnings to stderr, check if file was created
-            if !std::path::Path::new(&output_file).exists() {
-                return Err(format!("FFmpeg failed for segment {}: {}", i + 1, stderr));
-            }
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Check if any files were created
+        let first_file = format!("{}/{}_{:03}.{}", output_dir, stem, 0, extension);
+        if !std::path::Path::new(&first_file).exists() {
+            return Err(format!("FFmpeg failed: {}", stderr));
         }
+    }
 
-        output_files.push(output_file);
+    // Collect output files
+    let mut output_files = Vec::new();
+    for i in 0..total_segments + 5 {  // Check a few extra in case of rounding
+        let file_path = format!("{}/{}_{:03}.{}", output_dir, stem, i, extension);
+        if std::path::Path::new(&file_path).exists() {
+            output_files.push(file_path);
+        } else {
+            break;
+        }
     }
 
     // Emit completion
     let final_progress = SplitProgress {
-        current_segment: total_segments,
-        total_segments,
+        current_segment: output_files.len() as u32,
+        total_segments: output_files.len() as u32,
         percentage: 100.0,
         current_file: "完成".to_string(),
     };

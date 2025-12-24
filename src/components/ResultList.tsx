@@ -1,5 +1,5 @@
 import React from 'react';
-import { openPath } from '@tauri-apps/plugin-opener';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
 interface ResultListProps {
     files: string[];
@@ -11,7 +11,11 @@ const ResultList: React.FC<ResultListProps> = ({ files, outputDir }) => {
 
     const handleOpenFolder = async () => {
         try {
-            await openPath(outputDir);
+            // Use revealItemInDir to open the folder in Finder
+            // We reveal the first output file to show the folder
+            if (files.length > 0) {
+                await revealItemInDir(files[0]);
+            }
         } catch (error) {
             console.error('Failed to open folder:', error);
         }
