@@ -115,7 +115,6 @@ function App() {
         {result?.success && (
           <ResultList
             files={result.output_files}
-            outputDir={outputDir}
           />
         )}
 

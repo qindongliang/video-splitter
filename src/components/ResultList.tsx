@@ -3,10 +3,9 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
 interface ResultListProps {
     files: string[];
-    outputDir: string;
 }
 
-const ResultList: React.FC<ResultListProps> = ({ files, outputDir }) => {
+const ResultList: React.FC<ResultListProps> = ({ files }) => {
     if (files.length === 0) return null;
 
     const handleOpenFolder = async () => {
