@@ -25,9 +25,27 @@ pub struct SplitResult {
     pub error: Option<String>,
 }
 
+/// Helper to find executable in common paths on macOS
+fn find_executable(name: &str) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let common_paths = [
+            format!("/opt/homebrew/bin/{}", name),
+            format!("/usr/local/bin/{}", name),
+        ];
+        for path in common_paths {
+            if std::path::Path::new(&path).exists() {
+                return path;
+            }
+        }
+    }
+    name.to_string()
+}
+
 /// Get video duration using FFmpeg
 pub fn get_video_duration(path: &str) -> Result<f64, String> {
-    let output = Command::new("ffprobe")
+    let ffprobe_cmd = find_executable("ffprobe");
+    let output = Command::new(&ffprobe_cmd)
         .args([
             "-v", "error",
             "-show_entries", "format=duration",
@@ -35,7 +53,7 @@ pub fn get_video_duration(path: &str) -> Result<f64, String> {
             path,
         ])
         .output()
-        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+        .map_err(|e| format!("Failed to run {}: {}", ffprobe_cmd, e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -95,7 +113,8 @@ pub fn split_video(
     // -map 0: include all streams
     // -c copy: no re-encoding
     // -break_non_keyframes 0: only break on keyframes (prevents corrupted segments)
-    let output = Command::new("ffmpeg")
+    let ffmpeg_cmd = find_executable("ffmpeg");
+    let output = Command::new(&ffmpeg_cmd)
         .args([
             "-y",
             "-i", input_path,
@@ -108,7 +127,7 @@ pub fn split_video(
             &output_pattern,
         ])
         .output()
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+        .map_err(|e| format!("Failed to run {}: {}", ffmpeg_cmd, e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
