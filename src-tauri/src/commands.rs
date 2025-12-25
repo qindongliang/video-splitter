@@ -1,5 +1,11 @@
-use crate::ffmpeg::{format_duration, get_video_duration, split_video, SplitResult, VideoInfo};
+use crate::ffmpeg::{check_ffmpeg, format_duration, get_video_duration, split_video, FFmpegStatus, SplitResult, VideoInfo};
 use tauri::AppHandle;
+
+/// Check if FFmpeg is installed and get its path
+#[tauri::command]
+pub fn check_ffmpeg_command() -> FFmpegStatus {
+    check_ffmpeg()
+}
 
 /// Get video information including duration
 #[tauri::command]

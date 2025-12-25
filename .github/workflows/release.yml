@@ -95,39 +95,39 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-  # Build universal macOS binary
-  build-macos-universal:
-    needs: build
-    runs-on: macos-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Add Rust targets
-        run: |
-          rustup target add aarch64-apple-darwin
-          rustup target add x86_64-apple-darwin
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Build universal binary
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Video Splitter ${{ github.ref_name }}'
-          releaseDraft: true
-          prerelease: false
-          args: '--target universal-apple-darwin'
+  # NOTE: Universal build disabled for now
+  # build-macos-universal:
+  #   needs: build
+  #   runs-on: macos-latest
+  #   if: startsWith(github.ref, 'refs/tags/')
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'npm'
+  #
+  #     - name: Setup Rust
+  #       uses: dtolnay/rust-toolchain@stable
+  #
+  #     - name: Add Rust targets
+  #       run: |
+  #         rustup target add aarch64-apple-darwin
+  #         rustup target add x86_64-apple-darwin
+  #
+  #     - name: Install frontend dependencies
+  #       run: npm ci
+  #
+  #     - name: Build universal binary
+  #       uses: tauri-apps/tauri-action@v0
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       with:
+  #         tagName: ${{ github.ref_name }}
+  #         releaseName: 'Video Splitter ${{ github.ref_name }}'
+  #         releaseDraft: true
+  #         prerelease: false
+  #         args: '--target universal-apple-darwin'
