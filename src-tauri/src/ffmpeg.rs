@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_shell::ShellExt;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VideoInfo {
@@ -25,75 +25,6 @@ pub struct SplitResult {
     pub error: Option<String>,
 }
 
-/// Helper to find executable in common paths (multi-platform)
-pub fn find_executable(name: &str) -> Option<String> {
-    // Platform-specific common paths
-    #[cfg(target_os = "macos")]
-    let common_paths = vec![
-        format!("/opt/homebrew/bin/{}", name),
-        format!("/usr/local/bin/{}", name),
-        format!("/usr/bin/{}", name),
-    ];
-    
-    #[cfg(target_os = "linux")]
-    let common_paths = vec![
-        format!("/usr/bin/{}", name),
-        format!("/usr/local/bin/{}", name),
-        format!("/snap/bin/{}", name),
-    ];
-    
-    #[cfg(target_os = "windows")]
-    let common_paths = vec![
-        format!("C:\\Program Files\\ffmpeg\\bin\\{}.exe", name),
-        format!("C:\\ffmpeg\\bin\\{}.exe", name),
-        format!("C:\\Program Files (x86)\\ffmpeg\\bin\\{}.exe", name),
-    ];
-    
-    // Check common paths first
-    for path in &common_paths {
-        if std::path::Path::new(&path).exists() {
-            return Some(path.clone());
-        }
-    }
-    
-    // Try to find in PATH using "which" (Unix) or "where" (Windows)
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(output) = Command::new("which").arg(name).output() {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() && std::path::Path::new(&path).exists() {
-                    return Some(path);
-                }
-            }
-        }
-    }
-    
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(output) = Command::new("where").arg(name).output() {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
-                if !path.is_empty() && std::path::Path::new(&path).exists() {
-                    return Some(path);
-                }
-            }
-        }
-    }
-    
-    None
-}
-
-/// Get executable path, fallback to name if not found
-fn get_executable(name: &str) -> String {
-    find_executable(name).unwrap_or_else(|| name.to_string())
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FFmpegStatus {
     pub found: bool,
@@ -104,85 +35,81 @@ pub struct FFmpegStatus {
     pub error: Option<String>,
 }
 
-/// Get OS information string
 fn get_os_info() -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
-    
+
     let os_name = match os {
         "macos" => "macOS",
         "linux" => "Linux",
         "windows" => "Windows",
         _ => os,
     };
-    
+
     let arch_name = match arch {
         "x86_64" => "x64",
         "aarch64" => "ARM64",
         "x86" => "x86",
         _ => arch,
     };
-    
+
     format!("{} ({})", os_name, arch_name)
 }
 
-/// Check if ffmpeg and ffprobe are installed
-pub fn check_ffmpeg() -> FFmpegStatus {
-    let ffmpeg_path = find_executable("ffmpeg");
-    let ffprobe_path = find_executable("ffprobe");
+pub async fn check_ffmpeg(app_handle: &AppHandle) -> FFmpegStatus {
     let os_info = get_os_info();
-    
-    if ffmpeg_path.is_none() || ffprobe_path.is_none() {
+    let ffmpeg_sidecar = app_handle.shell().sidecar("ffmpeg");
+    let ffprobe_sidecar = app_handle.shell().sidecar("ffprobe");
+
+    if ffmpeg_sidecar.is_err() || ffprobe_sidecar.is_err() {
         return FFmpegStatus {
             found: false,
-            ffmpeg_path,
-            ffprobe_path,
+            ffmpeg_path: ffmpeg_sidecar.ok().map(|_| "sidecar:ffmpeg".to_string()),
+            ffprobe_path: ffprobe_sidecar.ok().map(|_| "sidecar:ffprobe".to_string()),
             version: None,
             os_info,
-            error: Some("FFmpeg 未安装或未找到。请安装 FFmpeg 后重试。".to_string()),
+            error: Some("内置 FFmpeg 未找到，请重新安装应用。".to_string()),
         };
     }
-    
-    // Try to get version
-    let version = if let Some(ref path) = ffmpeg_path {
-        Command::new(path)
-            .arg("-version")
-            .output()
-            .ok()
-            .and_then(|output| {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    stdout.lines().next().map(|s| s.to_string())
-                } else {
-                    None
-                }
-            })
-    } else {
-        None
+
+    let version = match app_handle.shell().sidecar("ffmpeg") {
+        Ok(command) => match command.args(["-version"]).output().await {
+            Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .map(|line| line.to_string()),
+            _ => None,
+        },
+        Err(_) => None,
     };
-    
+
     FFmpegStatus {
         found: true,
-        ffmpeg_path,
-        ffprobe_path,
+        ffmpeg_path: Some("sidecar:ffmpeg".to_string()),
+        ffprobe_path: Some("sidecar:ffprobe".to_string()),
         version,
         os_info,
         error: None,
     }
 }
 
-/// Get video duration using FFmpeg
-pub fn get_video_duration(path: &str) -> Result<f64, String> {
-    let ffprobe_cmd = get_executable("ffprobe");
-    let output = Command::new(&ffprobe_cmd)
+pub async fn get_video_duration(app_handle: &AppHandle, path: &str) -> Result<f64, String> {
+    let output = app_handle
+        .shell()
+        .sidecar("ffprobe")
+        .map_err(|e| format!("Failed to locate ffprobe sidecar: {}", e))?
         .args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
             path,
         ])
         .output()
-        .map_err(|e| format!("Failed to run {}: {}", ffprobe_cmd, e))?;
+        .await
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -196,7 +123,6 @@ pub fn get_video_duration(path: &str) -> Result<f64, String> {
         .map_err(|e| format!("Failed to parse duration: {}", e))
 }
 
-/// Format seconds to HH:MM:SS
 pub fn format_duration(seconds: f64) -> String {
     let hours = (seconds / 3600.0).floor() as u32;
     let minutes = ((seconds % 3600.0) / 60.0).floor() as u32;
@@ -204,27 +130,25 @@ pub fn format_duration(seconds: f64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, secs)
 }
 
-/// Split video into segments using FFmpeg segment muxer
-pub fn split_video(
+pub async fn split_video(
     app_handle: &AppHandle,
     input_path: &str,
     output_dir: &str,
     segment_duration: u32,
 ) -> Result<SplitResult, String> {
-    // Get video duration first
-    let total_duration = get_video_duration(input_path)?;
+    let total_duration = get_video_duration(app_handle, input_path).await?;
     let total_segments = (total_duration / segment_duration as f64).ceil() as u32;
 
-    // Extract filename without extension
     let path = std::path::Path::new(input_path);
-    let stem = path.file_stem()
+    let stem = path
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("video");
-    let extension = path.extension()
+    let extension = path
+        .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("mp4");
 
-    // Emit initial progress
     let progress = SplitProgress {
         current_segment: 0,
         total_segments,
@@ -233,43 +157,44 @@ pub fn split_video(
     };
     let _ = app_handle.emit("split-progress", &progress);
 
-    // Output pattern for segment files
     let output_pattern = format!("{}/{}_%03d.{}", output_dir, stem, extension);
 
-    // Use FFmpeg segment muxer for reliable splitting
-    // -segment_time: duration of each segment
-    // -reset_timestamps 1: reset timestamps for each segment (prevents black frames)
-    // -map 0: include all streams
-    // -c copy: no re-encoding
-    // -break_non_keyframes 0: only break on keyframes (prevents corrupted segments)
-    let ffmpeg_cmd = get_executable("ffmpeg");
-    let output = Command::new(&ffmpeg_cmd)
+    let output = app_handle
+        .shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to locate ffmpeg sidecar: {}", e))?
         .args([
             "-y",
-            "-i", input_path,
-            "-c", "copy",
-            "-map", "0",
-            "-f", "segment",
-            "-segment_time", &segment_duration.to_string(),
-            "-reset_timestamps", "1",
-            "-break_non_keyframes", "0",
+            "-i",
+            input_path,
+            "-c",
+            "copy",
+            "-map",
+            "0",
+            "-f",
+            "segment",
+            "-segment_time",
+            &segment_duration.to_string(),
+            "-reset_timestamps",
+            "1",
+            "-break_non_keyframes",
+            "0",
             &output_pattern,
         ])
         .output()
-        .map_err(|e| format!("Failed to run {}: {}", ffmpeg_cmd, e))?;
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // Check if any files were created
         let first_file = format!("{}/{}_{:03}.{}", output_dir, stem, 0, extension);
         if !std::path::Path::new(&first_file).exists() {
             return Err(format!("FFmpeg failed: {}", stderr));
         }
     }
 
-    // Collect output files
     let mut output_files = Vec::new();
-    for i in 0..total_segments + 5 {  // Check a few extra in case of rounding
+    for i in 0..total_segments + 5 {
         let file_path = format!("{}/{}_{:03}.{}", output_dir, stem, i, extension);
         if std::path::Path::new(&file_path).exists() {
             output_files.push(file_path);
@@ -278,10 +203,106 @@ pub fn split_video(
         }
     }
 
-    // Emit completion
     let final_progress = SplitProgress {
         current_segment: output_files.len() as u32,
         total_segments: output_files.len() as u32,
+        percentage: 100.0,
+        current_file: "完成".to_string(),
+    };
+    let _ = app_handle.emit("split-progress", &final_progress);
+
+    Ok(SplitResult {
+        success: true,
+        output_files,
+        error: None,
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TimeRange {
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+}
+
+pub async fn split_video_by_ranges(
+    app_handle: &AppHandle,
+    input_path: &str,
+    output_dir: &str,
+    ranges: Vec<TimeRange>,
+) -> Result<SplitResult, String> {
+    let path = std::path::Path::new(input_path);
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("video");
+    let extension = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("mp4");
+
+    let total_segments = ranges.len() as u32;
+    let mut output_files = Vec::new();
+
+    for (i, range) in ranges.iter().enumerate() {
+        let progress = SplitProgress {
+            current_segment: i as u32 + 1,
+            total_segments,
+            percentage: ((i as f64) / (total_segments as f64)) * 100.0,
+            current_file: format!("正在切分片段 {}/{}...", i + 1, total_segments),
+        };
+        let _ = app_handle.emit("split-progress", &progress);
+
+        let output_file = format!("{}/{}_{:03}.{}", output_dir, stem, i, extension);
+        let start_time = format!("{:.3}", range.start_seconds);
+        let end_time = format!("{:.3}", range.end_seconds);
+
+        let output = app_handle
+            .shell()
+            .sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to locate ffmpeg sidecar: {}", e))?
+            .args([
+                "-y",
+                "-i",
+                input_path,
+                "-ss",
+                &start_time,
+                "-to",
+                &end_time,
+                "-map",
+                "0",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                "-c:s",
+                "copy",
+                "-c:d",
+                "copy",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-reset_timestamps",
+                "1",
+                &output_file,
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("FFmpeg failed on segment {}: {}", i + 1, stderr));
+        }
+
+        if std::path::Path::new(&output_file).exists() {
+            output_files.push(output_file);
+        }
+    }
+
+    let final_progress = SplitProgress {
+        current_segment: total_segments,
+        total_segments,
         percentage: 100.0,
         current_file: "完成".to_string(),
     };

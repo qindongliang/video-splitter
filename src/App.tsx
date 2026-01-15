@@ -7,6 +7,8 @@ import ProgressBar from './components/ProgressBar';
 import ResultList from './components/ResultList';
 import ThemeToggle from './components/ThemeToggle';
 import VideoPlayer from './components/VideoPlayer';
+import SplitModeSelector from './components/SplitModeSelector';
+import TimeRangeEditor, { TimeRange } from './components/TimeRangeEditor';
 import { useVideoSplit } from './hooks/useVideoSplit';
 import './index.css';
 
@@ -27,6 +29,8 @@ function App() {
   const [showPreview, setShowPreview] = useState(false);
   const [ffmpegStatus, setFfmpegStatus] = useState<FFmpegStatus | null>(null);
   const [isCheckingFfmpeg, setIsCheckingFfmpeg] = useState(false);
+  const [splitMode, setSplitMode] = useState<'interval' | 'ranges'>('interval');
+  const [timeRanges, setTimeRanges] = useState<TimeRange[]>([]);
 
   const {
     videoInfo,
@@ -37,6 +41,7 @@ function App() {
     error,
     loadVideoInfo,
     splitVideo,
+    splitVideoByRanges,
   } = useVideoSplit();
 
   // Set default output directory to same as input file
@@ -50,12 +55,30 @@ function App() {
   const handleFileSelect = async (path: string) => {
     setSelectedFile(path);
     setShowPreview(false);
+    setTimeRanges([]);
     await loadVideoInfo(path);
+  };
+
+  const handleAddRange = (range: TimeRange) => {
+    setTimeRanges([...timeRanges, range]);
+  };
+
+  const handleUpdateRange = (id: string, newRange: Partial<TimeRange>) => {
+    setTimeRanges(timeRanges.map(r => r.id === id ? { ...r, ...newRange } : r));
+  };
+
+  const handleDeleteRange = (id: string) => {
+    setTimeRanges(timeRanges.filter(r => r.id !== id));
   };
 
   const handleSplit = async () => {
     if (!selectedFile || !outputDir) return;
-    await splitVideo(selectedFile, outputDir, segmentDuration);
+    
+    if (splitMode === 'interval') {
+      await splitVideo(selectedFile, outputDir, segmentDuration);
+    } else {
+      await splitVideoByRanges(selectedFile, outputDir, timeRanges);
+    }
   };
 
   const handleCheckFfmpeg = async () => {
@@ -77,7 +100,8 @@ function App() {
     }
   };
 
-  const canSplit = selectedFile && outputDir && videoInfo && !isProcessing && !isLoading;
+  const canSplit = selectedFile && outputDir && videoInfo && !isProcessing && !isLoading && 
+    (splitMode === 'interval' ? segmentDuration > 0 : timeRanges.length > 0);
 
   return (
     <div className="min-h-screen p-6 flex flex-col transition-colors duration-300">
@@ -130,7 +154,7 @@ function App() {
             )}
             <div className="flex-1 min-w-0">
               <p className={`font-medium text-sm ${ffmpegStatus.found ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                {ffmpegStatus.found ? 'FFmpeg 检测成功 ✓' : 'FFmpeg 未找到'}
+                {ffmpegStatus.found ? 'FFmpeg 检测成功 ✓' : '内置 FFmpeg 未找到'}
               </p>
               {ffmpegStatus.found ? (
                 <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">
@@ -155,7 +179,7 @@ function App() {
                 </div>
               ) : (
                 <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                  {ffmpegStatus.error || '请安装 FFmpeg 后重试。macOS: brew install ffmpeg'}
+                  {ffmpegStatus.error || '内置 FFmpeg 异常，请重新安装应用。'}
                 </p>
               )}
             </div>
@@ -208,13 +232,34 @@ function App() {
         {/* Settings */}
         {videoInfo && (
           <div className="glass rounded-xl p-5 space-y-5">
-            <DurationInput
-              value={segmentDuration}
-              onChange={setSegmentDuration}
-              unit={durationUnit}
-              onUnitChange={setDurationUnit}
+            <SplitModeSelector 
+              mode={splitMode}
+              onChange={setSplitMode}
               disabled={isProcessing}
             />
+            
+            {splitMode === 'interval' ? (
+              <DurationInput
+                value={segmentDuration}
+                onChange={setSegmentDuration}
+                unit={durationUnit}
+                onUnitChange={setDurationUnit}
+                disabled={isProcessing}
+              />
+            ) : (
+              selectedFile && (
+                <TimeRangeEditor
+                  filePath={selectedFile}
+                  duration={videoInfo.duration}
+                  ranges={timeRanges}
+                  onAddRange={handleAddRange}
+                  onUpdateRange={handleUpdateRange}
+                  onDeleteRange={handleDeleteRange}
+                  disabled={isProcessing}
+                />
+              )
+            )}
+            
             <OutputSelector
               value={outputDir}
               onChange={setOutputDir}
@@ -291,7 +336,10 @@ function App() {
         {/* Info */}
         {videoInfo && !isProcessing && !result && (
           <p className="text-center text-sm text-slate-500 dark:text-slate-500">
-            预计将切分为 {Math.ceil(videoInfo.duration / segmentDuration)} 个片段
+            {splitMode === 'interval' 
+              ? `预计将切分为 ${Math.ceil(videoInfo.duration / segmentDuration)} 个片段`
+              : `预计将切分为 ${timeRanges.length} 个片段`
+            }
           </p>
         )}
       </main>

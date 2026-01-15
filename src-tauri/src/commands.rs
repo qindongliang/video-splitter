@@ -1,16 +1,14 @@
-use crate::ffmpeg::{check_ffmpeg, format_duration, get_video_duration, split_video, FFmpegStatus, SplitResult, VideoInfo};
+use crate::ffmpeg::{check_ffmpeg, format_duration, get_video_duration, split_video, split_video_by_ranges, FFmpegStatus, SplitResult, TimeRange, VideoInfo};
 use tauri::AppHandle;
 
-/// Check if FFmpeg is installed and get its path
 #[tauri::command]
-pub fn check_ffmpeg_command() -> FFmpegStatus {
-    check_ffmpeg()
+pub async fn check_ffmpeg_command(app_handle: AppHandle) -> FFmpegStatus {
+    check_ffmpeg(&app_handle).await
 }
 
-/// Get video information including duration
 #[tauri::command]
-pub fn get_video_info(path: String) -> Result<VideoInfo, String> {
-    let duration = get_video_duration(&path)?;
+pub async fn get_video_info(app_handle: AppHandle, path: String) -> Result<VideoInfo, String> {
+    let duration = get_video_duration(&app_handle, &path).await?;
     let duration_formatted = format_duration(duration);
 
     let filename = std::path::Path::new(&path)
@@ -27,7 +25,6 @@ pub fn get_video_info(path: String) -> Result<VideoInfo, String> {
     })
 }
 
-/// Split video by specified duration (in seconds)
 #[tauri::command]
 pub async fn split_video_command(
     app_handle: AppHandle,
@@ -35,12 +32,17 @@ pub async fn split_video_command(
     output_dir: String,
     segment_duration: u32,
 ) -> Result<SplitResult, String> {
-    // Run in blocking thread to avoid blocking async runtime
-    tokio::task::spawn_blocking(move || {
-        split_video(&app_handle, &input_path, &output_dir, segment_duration)
-    })
-    .await
-    .map_err(|e| format!("Task error: {}", e))?
+    split_video(&app_handle, &input_path, &output_dir, segment_duration).await
+}
+
+#[tauri::command]
+pub async fn split_video_by_ranges_command(
+    app_handle: AppHandle,
+    input_path: String,
+    output_dir: String,
+    ranges: Vec<TimeRange>,
+) -> Result<SplitResult, String> {
+    split_video_by_ranges(&app_handle, &input_path, &output_dir, ranges).await
 }
 
 /// Select output directory (uses native dialog)

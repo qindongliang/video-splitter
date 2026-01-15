@@ -1,18 +1,27 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface VideoPlayerProps {
     filePath: string;
     title?: string;
     onClose?: () => void;
+    onTimeUpdate?: (time: number) => void;
+    seekTo?: number | null;
 }
 
-const VideoPlayer = ({ filePath, title, onClose }: VideoPlayerProps) => {
+const VideoPlayer = ({ filePath, title, onClose, onTimeUpdate, seekTo }: VideoPlayerProps) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1);
+
+    useEffect(() => {
+        if (seekTo !== null && seekTo !== undefined && videoRef.current) {
+            videoRef.current.currentTime = seekTo;
+            setCurrentTime(seekTo);
+        }
+    }, [seekTo]);
 
     // Convert local file path to asset URL
     const videoSrc = convertFileSrc(filePath);
@@ -36,7 +45,11 @@ const VideoPlayer = ({ filePath, title, onClose }: VideoPlayerProps) => {
 
     const handleTimeUpdate = () => {
         if (videoRef.current) {
-            setCurrentTime(videoRef.current.currentTime);
+            const time = videoRef.current.currentTime;
+            setCurrentTime(time);
+            if (onTimeUpdate) {
+                onTimeUpdate(time);
+            }
         }
     };
 

@@ -1,7 +1,7 @@
 mod commands;
 pub mod ffmpeg;
 
-use commands::{check_ffmpeg_command, get_video_info, select_directory, split_video_command};
+use commands::{check_ffmpeg_command, get_video_info, select_directory, split_video_command, split_video_by_ranges_command};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,6 +13,7 @@ pub fn run() {
             check_ffmpeg_command,
             get_video_info,
             split_video_command,
+            split_video_by_ranges_command,
             select_directory
         ])
         .run(tauri::generate_context!())

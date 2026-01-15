@@ -22,6 +22,12 @@ interface SplitResult {
     error: string | null;
 }
 
+interface TimeRange {
+    id: string;
+    startTime: number;
+    endTime: number;
+}
+
 export function useVideoSplit() {
     const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -87,6 +93,39 @@ export function useVideoSplit() {
         }
     }, [videoInfo]);
 
+    const splitVideoByRanges = useCallback(async (
+        inputPath: string,
+        outputDir: string,
+        ranges: TimeRange[]
+    ) => {
+        setIsProcessing(true);
+        setError(null);
+        setResult(null);
+        setProgress({
+            current_segment: 0,
+            total_segments: ranges.length,
+            percentage: 0,
+            current_file: '准备中...',
+        });
+
+        try {
+            const rangesPayload = ranges.map(r => ({
+                start_seconds: r.startTime,
+                end_seconds: r.endTime,
+            }));
+            const splitResult = await invoke<SplitResult>('split_video_by_ranges_command', {
+                inputPath,
+                outputDir,
+                ranges: rangesPayload,
+            });
+            setResult(splitResult);
+        } catch (err) {
+            setError(err as string);
+        } finally {
+            setIsProcessing(false);
+        }
+    }, []);
+
     const reset = useCallback(() => {
         setVideoInfo(null);
         setProgress(null);
@@ -103,6 +142,7 @@ export function useVideoSplit() {
         error,
         loadVideoInfo,
         splitVideo,
+        splitVideoByRanges,
         reset,
     };
 }

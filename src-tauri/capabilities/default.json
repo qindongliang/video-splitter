@@ -9,6 +9,21 @@
     "core:default",
     "opener:default",
     "dialog:default",
-    "shell:default"
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "ffmpeg",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "ffprobe",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
   ]
 }
