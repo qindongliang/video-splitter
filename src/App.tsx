@@ -73,7 +73,7 @@ function App() {
 
   const handleSplit = async () => {
     if (!selectedFile || !outputDir) return;
-    
+
     if (splitMode === 'interval') {
       await splitVideo(selectedFile, outputDir, segmentDuration);
     } else {
@@ -100,7 +100,7 @@ function App() {
     }
   };
 
-  const canSplit = selectedFile && outputDir && videoInfo && !isProcessing && !isLoading && 
+  const canSplit = selectedFile && outputDir && videoInfo && !isProcessing && !isLoading &&
     (splitMode === 'interval' ? segmentDuration > 0 : timeRanges.length > 0);
 
   return (
@@ -223,6 +223,8 @@ function App() {
               <VideoPlayer
                 filePath={selectedFile}
                 title={videoInfo.filename}
+                fileSize={videoInfo.file_size}
+                totalDuration={videoInfo.duration}
                 onClose={() => setShowPreview(false)}
               />
             )}
@@ -232,12 +234,12 @@ function App() {
         {/* Settings */}
         {videoInfo && (
           <div className="glass rounded-xl p-5 space-y-5">
-            <SplitModeSelector 
+            <SplitModeSelector
               mode={splitMode}
               onChange={setSplitMode}
               disabled={isProcessing}
             />
-            
+
             {splitMode === 'interval' ? (
               <DurationInput
                 value={segmentDuration}
@@ -259,7 +261,7 @@ function App() {
                 />
               )
             )}
-            
+
             <OutputSelector
               value={outputDir}
               onChange={setOutputDir}
@@ -336,7 +338,7 @@ function App() {
         {/* Info */}
         {videoInfo && !isProcessing && !result && (
           <p className="text-center text-sm text-slate-500 dark:text-slate-500">
-            {splitMode === 'interval' 
+            {splitMode === 'interval'
               ? `预计将切分为 ${Math.ceil(videoInfo.duration / segmentDuration)} 个片段`
               : `预计将切分为 ${timeRanges.length} 个片段`
             }

@@ -1,5 +1,5 @@
-use crate::ffmpeg::{check_ffmpeg, format_duration, get_video_duration, split_video, split_video_by_ranges, FFmpegStatus, SplitResult, TimeRange, VideoInfo};
-use tauri::AppHandle;
+use crate::ffmpeg::{check_ffmpeg, format_duration, get_video_duration, prepare_hls_source, PreviewSource, split_video, split_video_by_ranges, FFmpegStatus, SplitResult, TimeRange, VideoInfo};
+use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 pub async fn check_ffmpeg_command(app_handle: AppHandle) -> FFmpegStatus {
@@ -11,17 +11,23 @@ pub async fn get_video_info(app_handle: AppHandle, path: String) -> Result<Video
     let duration = get_video_duration(&app_handle, &path).await?;
     let duration_formatted = format_duration(duration);
 
-    let filename = std::path::Path::new(&path)
+    let file_path = std::path::Path::new(&path);
+    let filename = file_path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown")
         .to_string();
+
+    let file_size = std::fs::metadata(&path)
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     Ok(VideoInfo {
         path,
         duration,
         duration_formatted,
         filename,
+        file_size,
     })
 }
 
@@ -43,6 +49,39 @@ pub async fn split_video_by_ranges_command(
     ranges: Vec<TimeRange>,
 ) -> Result<SplitResult, String> {
     split_video_by_ranges(&app_handle, &input_path, &output_dir, ranges).await
+}
+
+#[tauri::command]
+pub async fn prepare_hls_source_command(
+    app_handle: AppHandle,
+    input_path: String,
+    min_size_bytes: u64,
+    segment_seconds: u64,
+    start_seconds: Option<f64>,
+    window_seconds: Option<u64>,
+) -> Result<PreviewSource, String> {
+    prepare_hls_source(
+        &app_handle,
+        &input_path,
+        min_size_bytes,
+        segment_seconds,
+        start_seconds,
+        window_seconds,
+    )
+    .await
+}
+
+/// Allow a user-selected file or directory for the asset protocol.
+#[tauri::command]
+pub async fn allow_asset_path(app_handle: AppHandle, path: String, is_dir: bool) -> Result<(), String> {
+    let scope = app_handle.asset_protocol_scope();
+    if is_dir {
+        scope
+            .allow_directory(path, true)
+            .map_err(|e| e.to_string())
+    } else {
+        scope.allow_file(path).map_err(|e| e.to_string())
+    }
 }
 
 /// Select output directory (uses native dialog)

@@ -1,7 +1,7 @@
 mod commands;
 pub mod ffmpeg;
 
-use commands::{check_ffmpeg_command, get_video_info, select_directory, split_video_command, split_video_by_ranges_command};
+use commands::{allow_asset_path, check_ffmpeg_command, get_video_info, prepare_hls_source_command, select_directory, split_video_command, split_video_by_ranges_command};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -10,8 +10,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
+            allow_asset_path,
             check_ffmpeg_command,
             get_video_info,
+            prepare_hls_source_command,
             split_video_command,
             split_video_by_ranges_command,
             select_directory
