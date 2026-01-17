@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { invoke } from '@tauri-apps/api/core';
 import VideoPlayer from './VideoPlayer';
 
 interface ResultListProps {
@@ -8,6 +9,8 @@ interface ResultListProps {
 
 const ResultList = ({ files }: ResultListProps) => {
     const [previewFile, setPreviewFile] = useState<string | null>(null);
+    const [previewDuration, setPreviewDuration] = useState<number | null>(null);
+    const [previewError, setPreviewError] = useState<string | null>(null);
 
     if (files.length === 0) return null;
 
@@ -28,6 +31,34 @@ const ResultList = ({ files }: ResultListProps) => {
     const handlePlayVideo = (filePath: string) => {
         setPreviewFile(filePath === previewFile ? null : filePath);
     };
+
+    useEffect(() => {
+        let cancelled = false;
+        setPreviewDuration(null);
+        setPreviewError(null);
+
+        if (!previewFile) {
+            return () => {
+                cancelled = true;
+            };
+        }
+
+        invoke<{ duration: number }>('get_video_info', { path: previewFile })
+            .then((info) => {
+                if (!cancelled) {
+                    setPreviewDuration(info.duration);
+                }
+            })
+            .catch((err) => {
+                if (!cancelled) {
+                    setPreviewError(String(err));
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [previewFile]);
 
     return (
         <div className="w-full space-y-3">
@@ -89,8 +120,15 @@ const ResultList = ({ files }: ResultListProps) => {
                 <VideoPlayer
                     filePath={previewFile}
                     title={getFileName(previewFile)}
+                    totalDuration={previewDuration ?? undefined}
                     onClose={() => setPreviewFile(null)}
                 />
+            )}
+
+            {previewError && (
+                <div className="text-xs text-red-500">
+                    读取预览时长失败：{previewError}
+                </div>
             )}
         </div>
     );

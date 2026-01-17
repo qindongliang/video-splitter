@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import Hls from 'hls.js';
 import { usePreviewSource } from '../hooks/usePreviewSource';
@@ -29,17 +29,27 @@ const VideoPlayer = ({ filePath, title, fileSize, totalDuration, onClose, onTime
     const [queuedSeek, setQueuedSeek] = useState<number | null>(null);
     const [autoPlayAfterSeek, setAutoPlayAfterSeek] = useState(false);
     const [isScrubbing, setIsScrubbing] = useState(false);
+    const [hlsStartOffset, setHlsStartOffset] = useState(0);
 
     // 大文件阈值：500MB
     const LARGE_FILE_THRESHOLD = 500 * 1024 * 1024;
     const isLargeFile = fileSize && fileSize > LARGE_FILE_THRESHOLD;
-    const HLS_MIN_SIZE = 200 * 1024 * 1024;
+    const HLS_MIN_SIZE_DEFAULT = 200 * 1024 * 1024;
     const HLS_SEGMENT_SECONDS = 2;
     const HLS_WINDOW_SECONDS = 10 * 60;
     const HLS_WINDOW_PADDING = 0;
 
+    const forceHls = useMemo(() => {
+        const ext = filePath.split('.').pop()?.toLowerCase();
+        if (!ext) {
+            return false;
+        }
+        return !['mp4', 'm4v', 'mov'].includes(ext);
+    }, [filePath]);
+    const hlsMinSize = forceHls ? 0 : HLS_MIN_SIZE_DEFAULT;
+
     const { source, isPreparing, prepareError } = usePreviewSource(filePath, {
-        minSizeBytes: HLS_MIN_SIZE,
+        minSizeBytes: hlsMinSize,
         segmentSeconds: HLS_SEGMENT_SECONDS,
         startSeconds: windowStart,
         windowSeconds: HLS_WINDOW_SECONDS,
@@ -52,6 +62,7 @@ const VideoPlayer = ({ filePath, title, fileSize, totalDuration, onClose, onTime
         setQueuedSeek(null);
         setAutoPlayAfterSeek(false);
         setIsScrubbing(false);
+        setHlsStartOffset(0);
         setCurrentTime(0);
     }, [filePath]);
 
@@ -90,7 +101,9 @@ const VideoPlayer = ({ filePath, title, fileSize, totalDuration, onClose, onTime
             return;
         }
         const target = clampTime(pendingSeek);
-        const relative = source?.kind === 'hls' ? Math.max(0, target - windowStart) : target;
+        const relative = source?.kind === 'hls'
+            ? Math.max(0, target - windowStart + hlsStartOffset)
+            : target;
         videoRef.current.currentTime = relative;
         setCurrentTime(target);
         setPendingSeek(null);
@@ -119,7 +132,7 @@ const VideoPlayer = ({ filePath, title, fileSize, totalDuration, onClose, onTime
         const windowEnd = windowStart + HLS_WINDOW_SECONDS;
         if (target >= windowStart && target <= windowEnd) {
             if (videoRef.current) {
-                videoRef.current.currentTime = target - windowStart;
+                videoRef.current.currentTime = Math.max(0, target - windowStart + hlsStartOffset);
             }
             setCurrentTime(target);
             return false;
@@ -170,11 +183,28 @@ const VideoPlayer = ({ filePath, title, fileSize, totalDuration, onClose, onTime
         video.load();
 
         const hls = new Hls({
+            startPosition: 0,
             maxBufferLength: 30,
             maxBufferSize: 60 * 1024 * 1024,
         });
         hls.loadSource(playlistUrl);
         hls.attachMedia(video);
+        const handleLevelDuration = (_: unknown, data: { details?: { totalduration?: number } }) => {
+            const total = data?.details?.totalduration;
+            if (typeof total === 'number' && Number.isFinite(total) && total > 0) {
+                setDuration(total);
+            }
+        };
+        const handleStartOffset = (_: unknown, data: any) => {
+            const start = data?.details?.fragments?.[0]?.start;
+            if (typeof start === 'number' && Number.isFinite(start) && start >= 0) {
+                setHlsStartOffset(start);
+            }
+        };
+        hls.on(Hls.Events.LEVEL_LOADED, handleLevelDuration);
+        hls.on(Hls.Events.LEVEL_UPDATED, handleLevelDuration);
+        hls.on(Hls.Events.LEVEL_LOADED, handleStartOffset);
+        hls.on(Hls.Events.LEVEL_UPDATED, handleStartOffset);
         hls.on(Hls.Events.ERROR, (_, data) => {
             if (data.fatal) {
                 const detail = data.details ? ` (${data.details})` : '';
@@ -184,6 +214,10 @@ const VideoPlayer = ({ filePath, title, fileSize, totalDuration, onClose, onTime
         });
 
         return () => {
+            hls.off(Hls.Events.LEVEL_LOADED, handleLevelDuration);
+            hls.off(Hls.Events.LEVEL_UPDATED, handleLevelDuration);
+            hls.off(Hls.Events.LEVEL_LOADED, handleStartOffset);
+            hls.off(Hls.Events.LEVEL_UPDATED, handleStartOffset);
             hls.destroy();
         };
     }, [source?.kind, source?.path, isPreparing, retryToken, source]);
@@ -251,7 +285,7 @@ const VideoPlayer = ({ filePath, title, fileSize, totalDuration, onClose, onTime
         if (videoRef.current) {
             const time = videoRef.current.currentTime;
             const baseOffset = source?.kind === 'hls' ? windowStart : 0;
-            const absoluteTime = baseOffset + time;
+            const absoluteTime = Math.max(0, baseOffset + time - hlsStartOffset);
             setCurrentTime(absoluteTime);
             if (onTimeUpdate) {
                 onTimeUpdate(absoluteTime);
@@ -344,7 +378,7 @@ const VideoPlayer = ({ filePath, title, fileSize, totalDuration, onClose, onTime
         }
         const windowEnd = windowStart + HLS_WINDOW_SECONDS;
         if (time >= windowStart && time <= windowEnd) {
-            videoRef.current.currentTime = time - windowStart;
+            videoRef.current.currentTime = Math.max(0, time - windowStart + hlsStartOffset);
         }
     };
 

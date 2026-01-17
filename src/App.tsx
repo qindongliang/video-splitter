@@ -29,7 +29,7 @@ function App() {
   const [showPreview, setShowPreview] = useState(false);
   const [ffmpegStatus, setFfmpegStatus] = useState<FFmpegStatus | null>(null);
   const [isCheckingFfmpeg, setIsCheckingFfmpeg] = useState(false);
-  const [splitMode, setSplitMode] = useState<'interval' | 'ranges'>('interval');
+  const [splitMode, setSplitMode] = useState<'interval' | 'ranges'>('ranges');
   const [timeRanges, setTimeRanges] = useState<TimeRange[]>([]);
 
   const {
@@ -69,6 +69,10 @@ function App() {
 
   const handleDeleteRange = (id: string) => {
     setTimeRanges(timeRanges.filter(r => r.id !== id));
+  };
+
+  const handleSetRanges = (nextRanges: TimeRange[]) => {
+    setTimeRanges(nextRanges);
   };
 
   const handleSplit = async () => {
@@ -255,6 +259,7 @@ function App() {
                   duration={videoInfo.duration}
                   ranges={timeRanges}
                   onAddRange={handleAddRange}
+                  onSetRanges={handleSetRanges}
                   onUpdateRange={handleUpdateRange}
                   onDeleteRange={handleDeleteRange}
                   disabled={isProcessing}

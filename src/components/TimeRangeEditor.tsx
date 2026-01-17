@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useImperativeHandle, forwardRef, type ForwardedRef } from 'react';
+import { useState, useRef, useEffect, useImperativeHandle, forwardRef, useMemo, type ForwardedRef } from 'react';
+import { createPortal } from 'react-dom';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import Hls from 'hls.js';
 import { usePreviewSource } from '../hooks/usePreviewSource';
@@ -14,6 +15,7 @@ interface TimeRangeEditorProps {
     duration: number;
     ranges: TimeRange[];
     onAddRange: (range: TimeRange) => void;
+    onSetRanges: (ranges: TimeRange[]) => void;
     onUpdateRange: (id: string, range: Partial<TimeRange>) => void;
     onDeleteRange: (id: string) => void;
     disabled?: boolean;
@@ -39,11 +41,21 @@ const formatDuration = (seconds: number): string => {
     return `${secs}秒`;
 };
 
+interface BatchParseLine {
+    lineNumber: number;
+    raw: string;
+    startSeconds: number | null;
+    endSeconds: number | null;
+    error?: string;
+    clamped?: boolean;
+}
+
 const TimeRangeEditor = forwardRef(function TimeRangeEditor({
     filePath,
     duration,
     ranges,
     onAddRange,
+    onSetRanges,
     onUpdateRange,
     onDeleteRange,
     disabled = false,
@@ -63,13 +75,31 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
     const [queuedSeek, setQueuedSeek] = useState<number | null>(null);
     const [autoPlayAfterSeek, setAutoPlayAfterSeek] = useState(false);
     const [isScrubbing, setIsScrubbing] = useState(false);
+    const [activeRangeId, setActiveRangeId] = useState<string | null>(null);
+    const [hlsStartOffset, setHlsStartOffset] = useState(0);
+    const [showBatchInput, setShowBatchInput] = useState(false);
+    const [batchText, setBatchText] = useState('');
+    const [batchError, setBatchError] = useState<string | null>(null);
+    const [batchOptions, setBatchOptions] = useState({
+        merge: true,
+        clamp: true,
+        ignoreInvalid: true,
+    });
 
-    const HLS_MIN_SIZE = 200 * 1024 * 1024;
+    const HLS_MIN_SIZE_DEFAULT = 200 * 1024 * 1024;
     const HLS_SEGMENT_SECONDS = 2;
     const HLS_WINDOW_SECONDS = 10 * 60;
     const HLS_WINDOW_PADDING = 0;
+    const forceHls = useMemo(() => {
+        const ext = filePath.split('.').pop()?.toLowerCase();
+        if (!ext) {
+            return false;
+        }
+        return !['mp4', 'm4v', 'mov'].includes(ext);
+    }, [filePath]);
+    const hlsMinSize = forceHls ? 0 : HLS_MIN_SIZE_DEFAULT;
     const { source, isPreparing, prepareError } = usePreviewSource(filePath, {
-        minSizeBytes: HLS_MIN_SIZE,
+        minSizeBytes: hlsMinSize,
         segmentSeconds: HLS_SEGMENT_SECONDS,
         startSeconds: windowStart,
         windowSeconds: HLS_WINDOW_SECONDS,
@@ -77,12 +107,146 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
     });
     const isUiDisabled = disabled || isPreparing || !!hlsError;
 
+    const parseTimeToSeconds = (input: string): number | null => {
+        const cleaned = input.trim();
+        if (!cleaned) {
+            return null;
+        }
+
+        const parts = cleaned.split(':').map((part) => part.trim());
+        if (parts.length === 0 || parts.length > 3) {
+            return null;
+        }
+
+        const nums = parts.map((part) => Number(part));
+        if (nums.some((value) => Number.isNaN(value) || value < 0)) {
+            return null;
+        }
+
+        let hours = 0;
+        let minutes = 0;
+        let seconds = 0;
+
+        if (nums.length === 3) {
+            [hours, minutes, seconds] = nums;
+        } else if (nums.length === 2) {
+            [minutes, seconds] = nums;
+        } else {
+            [seconds] = nums;
+        }
+
+        return hours * 3600 + minutes * 60 + seconds;
+    };
+
+    const parseBatchText = (text: string): BatchParseLine[] => {
+        const lines = text.split(/\r?\n/);
+        const results: BatchParseLine[] = [];
+
+        lines.forEach((rawLine, index) => {
+            const line = rawLine.trim();
+            if (!line) {
+                return;
+            }
+
+            const hasSeparator = /[-~—–,]/.test(line);
+            const tokens = hasSeparator
+                ? line.split(/\s*(?:-|~|,|—|–)\s*/).filter(Boolean)
+                : line.split(/\s+/).filter(Boolean);
+
+            if (tokens.length < 2) {
+                results.push({
+                    lineNumber: index + 1,
+                    raw: line,
+                    startSeconds: null,
+                    endSeconds: null,
+                    error: '缺少起止时间',
+                });
+                return;
+            }
+
+            const start = parseTimeToSeconds(tokens[0]);
+            const end = parseTimeToSeconds(tokens[1]);
+
+            if (start === null || end === null) {
+                results.push({
+                    lineNumber: index + 1,
+                    raw: line,
+                    startSeconds: start,
+                    endSeconds: end,
+                    error: '时间格式错误',
+                });
+                return;
+            }
+
+            if (end <= start) {
+                results.push({
+                    lineNumber: index + 1,
+                    raw: line,
+                    startSeconds: start,
+                    endSeconds: end,
+                    error: '结束时间必须大于开始时间',
+                });
+                return;
+            }
+
+            let finalStart = start;
+            let finalEnd = end;
+            let clamped = false;
+
+            if (batchOptions.clamp && duration > 0) {
+                finalStart = Math.min(Math.max(finalStart, 0), duration);
+                finalEnd = Math.min(Math.max(finalEnd, 0), duration);
+                if (finalStart !== start || finalEnd !== end) {
+                    clamped = true;
+                }
+            }
+
+            if (duration > 0 && (finalStart >= duration || finalEnd > duration)) {
+                results.push({
+                    lineNumber: index + 1,
+                    raw: line,
+                    startSeconds: finalStart,
+                    endSeconds: finalEnd,
+                    error: '时间超出视频时长',
+                });
+                return;
+            }
+
+            if (finalEnd <= finalStart) {
+                results.push({
+                    lineNumber: index + 1,
+                    raw: line,
+                    startSeconds: finalStart,
+                    endSeconds: finalEnd,
+                    error: '结束时间必须大于开始时间',
+                });
+                return;
+            }
+
+            results.push({
+                lineNumber: index + 1,
+                raw: line,
+                startSeconds: finalStart,
+                endSeconds: finalEnd,
+                clamped,
+            });
+        });
+
+        return results;
+    };
+
+    const batchPreview = useMemo(() => parseBatchText(batchText), [batchText, batchOptions, duration]);
+    const invalidCount = batchPreview.filter((item) => item.error).length;
+    const validCount = batchPreview.filter((item) => !item.error && item.startSeconds !== null && item.endSeconds !== null).length;
+
     useEffect(() => {
         setWindowStart(0);
         setPendingSeek(null);
         setQueuedSeek(null);
         setAutoPlayAfterSeek(false);
         setIsScrubbing(false);
+        setActiveRangeId(null);
+        setHlsStartOffset(0);
         setCurrentTime(0);
     }, [filePath]);
 
@@ -121,7 +285,9 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
             return;
         }
         const target = clampTime(pendingSeek);
-        const relative = source?.kind === 'hls' ? Math.max(0, target - windowStart) : target;
+        const relative = source?.kind === 'hls'
+            ? Math.max(0, target - windowStart + hlsStartOffset)
+            : target;
         videoRef.current.currentTime = relative;
         setCurrentTime(target);
         setPendingSeek(null);
@@ -150,7 +316,7 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
         const windowEnd = windowStart + HLS_WINDOW_SECONDS;
         if (target >= windowStart && target <= windowEnd) {
             if (videoRef.current) {
-                videoRef.current.currentTime = target - windowStart;
+                videoRef.current.currentTime = Math.max(0, target - windowStart + hlsStartOffset);
             }
             setCurrentTime(target);
             return false;
@@ -195,11 +361,20 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
         video.load();
 
         const hls = new Hls({
+            startPosition: 0,
             maxBufferLength: 30,
             maxBufferSize: 60 * 1024 * 1024,
         });
         hls.loadSource(playlistUrl);
         hls.attachMedia(video);
+        const handleStartOffset = (_: unknown, data: any) => {
+            const start = data?.details?.fragments?.[0]?.start;
+            if (typeof start === 'number' && Number.isFinite(start) && start >= 0) {
+                setHlsStartOffset(start);
+            }
+        };
+        hls.on(Hls.Events.LEVEL_LOADED, handleStartOffset);
+        hls.on(Hls.Events.LEVEL_UPDATED, handleStartOffset);
         hls.on(Hls.Events.ERROR, (_, data) => {
             if (data.fatal) {
                 const detail = data.details ? ` (${data.details})` : '';
@@ -209,6 +384,8 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
         });
 
         return () => {
+            hls.off(Hls.Events.LEVEL_LOADED, handleStartOffset);
+            hls.off(Hls.Events.LEVEL_UPDATED, handleStartOffset);
             hls.destroy();
         };
     }, [source?.kind, source?.path, isPreparing, retryToken, source]);
@@ -271,7 +448,17 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
         if (videoRef.current) {
             const time = videoRef.current.currentTime;
             const baseOffset = source?.kind === 'hls' ? windowStart : 0;
-            setCurrentTime(baseOffset + time);
+            const absoluteTime = Math.max(0, baseOffset + time - hlsStartOffset);
+            setCurrentTime(absoluteTime);
+
+            if (activeRangeId) {
+                const activeRange = ranges.find((range) => range.id === activeRangeId);
+                if (activeRange && absoluteTime >= activeRange.endTime) {
+                    videoRef.current.pause();
+                    setIsPlaying(false);
+                    setActiveRangeId(null);
+                }
+            }
         }
     };
 
@@ -356,7 +543,7 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
         }
         const windowEnd = windowStart + HLS_WINDOW_SECONDS;
         if (time >= windowStart && time <= windowEnd) {
-            videoRef.current.currentTime = time - windowStart;
+            videoRef.current.currentTime = Math.max(0, time - windowStart + hlsStartOffset);
         }
     };
 
@@ -413,14 +600,31 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
     };
 
     const handlePreviewRange = (range: TimeRange) => {
-        const deferred = seekToAbsolute(range.startTime);
+        if (!videoRef.current) {
+            return;
+        }
+        const isSameRange = activeRangeId === range.id;
+        if (isSameRange && isPlaying) {
+            videoRef.current.pause();
+            setIsPlaying(false);
+            return;
+        }
+
+        if (!isSameRange && isPlaying) {
+            videoRef.current.pause();
+            setIsPlaying(false);
+        }
+
+        const shouldSeek = !isSameRange || currentTime < range.startTime || currentTime > range.endTime;
+        const deferred = shouldSeek ? seekToAbsolute(range.startTime) : false;
+        setActiveRangeId(range.id);
+
         if (deferred) {
             setAutoPlayAfterSeek(true);
             return;
         }
-        if (videoRef.current) {
-            videoRef.current.play().catch(() => {});
-        }
+
+        videoRef.current.play().catch(() => {});
     };
 
     const getTimelineMarkers = () => {
@@ -432,6 +636,57 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
             width: ((range.endTime - range.startTime) / timelineDuration) * 100,
             id: range.id,
         }));
+    };
+
+    const mergeRanges = (items: { startSeconds: number; endSeconds: number }[]) => {
+        const sorted = [...items].sort((a, b) => a.startSeconds - b.startSeconds);
+        const merged: { startSeconds: number; endSeconds: number }[] = [];
+        sorted.forEach((range) => {
+            const last = merged[merged.length - 1];
+            if (last && range.startSeconds <= last.endSeconds) {
+                last.endSeconds = Math.max(last.endSeconds, range.endSeconds);
+            } else {
+                merged.push({ ...range });
+            }
+        });
+        return merged;
+    };
+
+    const applyBatchRanges = (mode: 'replace' | 'append') => {
+        setBatchError(null);
+        const validRanges = batchPreview
+            .filter((item) => !item.error && item.startSeconds !== null && item.endSeconds !== null)
+            .map((item) => ({
+                startSeconds: item.startSeconds as number,
+                endSeconds: item.endSeconds as number,
+            }));
+
+        if (!batchOptions.ignoreInvalid && invalidCount > 0) {
+            setBatchError('存在无效行，请修正后再导入');
+            return;
+        }
+
+        if (validRanges.length === 0) {
+            setBatchError('没有可导入的有效片段');
+            return;
+        }
+
+        const normalized = batchOptions.merge ? mergeRanges(validRanges) : validRanges;
+        const nextRanges: TimeRange[] = normalized.map((item) => ({
+            id: crypto.randomUUID(),
+            startTime: item.startSeconds,
+            endTime: item.endSeconds,
+        }));
+
+        if (mode === 'replace') {
+            onSetRanges(nextRanges);
+        } else {
+            onSetRanges([...ranges, ...nextRanges]);
+        }
+
+        setShowBatchInput(false);
+        setBatchText('');
+        setBatchError(null);
     };
 
     return (
@@ -446,12 +701,24 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
                         选择时间范围
                     </h3>
                 </div>
-                {(pendingStart !== null || editingRangeId) && (
-                    <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                        <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
-                        {editingRangeId ? '编辑中...' : `开始点: ${formatTime(pendingStart!)}`}
-                    </span>
-                )}
+                <div className="flex items-center gap-3">
+                    {(pendingStart !== null || editingRangeId) && (
+                        <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                            {editingRangeId ? '编辑中...' : `开始点: ${formatTime(pendingStart!)}`}
+                        </span>
+                    )}
+                    <button
+                        onClick={() => {
+                            setBatchError(null);
+                            setShowBatchInput(true);
+                        }}
+                        disabled={isUiDisabled}
+                        className="px-3 py-1 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
+                    >
+                        批量录入
+                    </button>
+                </div>
             </div>
 
             <div className="relative bg-black min-h-[200px]">
@@ -466,7 +733,10 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
                     onTimeUpdate={handleTimeUpdate}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
-                    onEnded={() => setIsPlaying(false)}
+                    onEnded={() => {
+                        setIsPlaying(false);
+                        setActiveRangeId(null);
+                    }}
                     onError={handleError}
                     onWaiting={handleWaiting}
                     onPlaying={handlePlaying}
@@ -663,10 +933,17 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
                                         className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors disabled:opacity-50"
                                         title="预览"
                                     >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
+                                        {activeRangeId === range.id && isPlaying ? (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 8v8m4-8v8" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        ) : (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        )}
                                     </button>
                                     <button
                                         onClick={() => handleEditRange(range)}
@@ -693,6 +970,153 @@ const TimeRangeEditor = forwardRef(function TimeRangeEditor({
                         ))}
                     </div>
                 </div>
+            )}
+
+            {showBatchInput && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-4xl rounded-2xl bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-700">
+                            <div>
+                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">批量录入时间段</h4>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">每行一个片段，支持多种分隔格式</p>
+                            </div>
+                            <button
+                                onClick={() => setShowBatchInput(false)}
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4">
+                            <div className="grid gap-4 md:grid-cols-[1.2fr_1fr] items-start">
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between h-6">
+                                        <label className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-none">批量时间段</label>
+                                        <button
+                                            onClick={() => setBatchText(`00:05:00 00:07:00\n01:05:00 01:10:00\n02:15:30 02:17:40`)}
+                                            className="text-[11px] text-primary-500 hover:text-primary-600 leading-none"
+                                        >
+                                            填入示例
+                                        </button>
+                                    </div>
+                                    <textarea
+                                        value={batchText}
+                                        onChange={(e) => setBatchText(e.target.value)}
+                                        placeholder={`00:10:00 - 00:12:30\n01:05:20 ~ 01:10:00\n02:30:15, 02:45:00`}
+                                        className="w-full h-40 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-mono text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
+                                    />
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+                                        <div>支持格式：`hh:mm:ss - hh:mm:ss` / `hh:mm:ss ~ hh:mm:ss` / `hh:mm:ss, hh:mm:ss` / 空格分隔，也可用 `mm:ss` 或 `ss`，自动转换</div>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between h-6">
+                                        <label className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-none">解析预览</label>
+                                        <span className="text-[11px] opacity-0 select-none leading-none">填入示例</span>
+                                    </div>
+                                    <div className="h-40 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-2 space-y-1">
+                                        {batchPreview.length === 0 && (
+                                            <div className="text-[11px] text-slate-400 text-center py-6">暂无内容</div>
+                                        )}
+                                        {batchPreview.map((item) => {
+                                            const isError = !!item.error;
+                                            const durationSeconds = item.endSeconds !== null && item.startSeconds !== null
+                                                ? item.endSeconds - item.startSeconds
+                                                : 0;
+                                            return (
+                                                <div
+                                                    key={`${item.lineNumber}-${item.raw}`}
+                                                    className={`rounded-md px-2 py-1 text-[11px] font-mono ${isError ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-300' : 'bg-white text-slate-600 dark:bg-slate-900/40 dark:text-slate-200'}`}
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-slate-400 dark:text-slate-500">#{item.lineNumber}</span>
+                                                        {isError ? (
+                                                            <span className="flex-1 text-right">{item.error}</span>
+                                                        ) : (
+                                                            <span className="flex-1 text-right">
+                                                                {formatTime(item.startSeconds || 0)} → {formatTime(item.endSeconds || 0)}
+                                                                {durationSeconds > 0 && ` (${formatDuration(durationSeconds)})`}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {!isError && item.clamped && (
+                                                        <div className="text-[10px] text-amber-600 dark:text-amber-400 text-right">已截断到视频时长</div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                                        <span>有效 {validCount} 条</span>
+                                        <span>无效 {invalidCount} 条</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-4 text-xs text-slate-600 dark:text-slate-300">
+                                <label className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={batchOptions.merge}
+                                        onChange={(e) => setBatchOptions((prev) => ({ ...prev, merge: e.target.checked }))}
+                                        className="rounded border-slate-300 dark:border-slate-600"
+                                    />
+                                    自动合并重叠片段
+                                </label>
+                                <label className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={batchOptions.clamp}
+                                        onChange={(e) => setBatchOptions((prev) => ({ ...prev, clamp: e.target.checked }))}
+                                        className="rounded border-slate-300 dark:border-slate-600"
+                                    />
+                                    超出时长自动截断
+                                </label>
+                                <label className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={batchOptions.ignoreInvalid}
+                                        onChange={(e) => setBatchOptions((prev) => ({ ...prev, ignoreInvalid: e.target.checked }))}
+                                        className="rounded border-slate-300 dark:border-slate-600"
+                                    />
+                                    忽略无效行
+                                </label>
+                            </div>
+
+                            {batchError && (
+                                <div className="text-xs text-red-500">{batchError}</div>
+                            )}
+
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                                <button
+                                    onClick={() => {
+                                        setBatchText('');
+                                        setBatchError(null);
+                                    }}
+                                    className="px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                >
+                                    清空输入
+                                </button>
+                                <button
+                                    onClick={() => applyBatchRanges('append')}
+                                    className="px-3 py-2 text-xs rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+                                >
+                                    导入并追加
+                                </button>
+                                <button
+                                    onClick={() => applyBatchRanges('replace')}
+                                    className="px-3 py-2 text-xs rounded-lg bg-primary-500 text-white hover:bg-primary-600"
+                                >
+                                    导入并替换
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
         </div>
     );
