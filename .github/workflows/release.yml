@@ -77,17 +77,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Video Splitter ${{ github.ref_name }}'
+          releaseName: 'Video Clipping ${{ github.ref_name }}'
           releaseBody: |
-            ## 🎬 Video Splitter ${{ github.ref_name }}
+            ## 🎬 Video Clipping ${{ github.ref_name }}
             
-            视频按时长切分工具，支持多种视频格式。
+            高效的视频切片工具，支持多种视频格式。
             
             ### 下载
-            - **macOS (Apple Silicon)**: `video-splitter_*_aarch64.dmg`
-            - **macOS (Intel)**: `video-splitter_*_x64.dmg`
-            - **Windows**: `video-splitter_*_x64-setup.exe` 或 `.msi`
-            - **Linux**: `video-splitter_*_amd64.deb` 或 `.AppImage`
+            - **macOS (Apple Silicon)**: `Video_Clipping_*_aarch64.dmg`
+            - **macOS (Intel)**: `Video_Clipping_*_x64.dmg`
+            - **Windows**: `Video_Clipping_*_x64-setup.exe` 或 `.msi`
+            - **Linux**: `Video_Clipping_*_amd64.deb` 或 `.AppImage`
             
             ### 系统要求
             - 需要安装 FFmpeg
@@ -127,7 +127,7 @@ jobs:
   #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   #       with:
   #         tagName: ${{ github.ref_name }}
-  #         releaseName: 'Video Splitter ${{ github.ref_name }}'
+  #         releaseName: 'Video Clipping ${{ github.ref_name }}'
   #         releaseDraft: true
   #         prerelease: false
   #         args: '--target universal-apple-darwin'
