@@ -132,10 +132,10 @@ function App() {
         </div>
         <div className="text-center">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-400 to-cyan-400 bg-clip-text text-transparent">
-            🎬 Video Splitter
+            🎬 Video Clipping
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2">
-            按指定时长自动切分视频
+            高效的视频切片工具
           </p>
         </div>
         <div className="flex-1 flex justify-end">

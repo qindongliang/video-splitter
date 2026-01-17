@@ -1,8 +1,8 @@
-# 🎬 Video Splitter 视频切分工具
+# 🎬 Video Clipping 视频切片工具
 
-一个简单易用的视频按时长自动切分工具，基于 Tauri + React 构建的跨平台桌面应用。
+高效的视频切片工具，基于 Tauri + React 构建的跨平台桌面应用。
 
-![Video Splitter Screenshot](docs/screenshot.png)
+![Video Clipping Screenshot](docs/screenshot.png)
 
 ---
 
@@ -44,16 +44,16 @@
 
 ### 方式一：下载预编译版本
 
-1. 从 [Releases](https://github.com/yourname/video-splitter/releases) 下载最新的 `.dmg` 文件
-2. 打开 DMG，将 `Video Splitter.app` 拖入 Applications 文件夹
+1. 从 [Releases](https://github.com/yourname/video-clipping/releases) 下载最新的 `.dmg` 文件
+2. 打开 DMG，将 `Video Clipping.app` 拖入 Applications 文件夹
 3. 首次运行可能需要在「系统偏好设置 > 安全性与隐私」中允许运行
 
 ### 方式二：从源码构建
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourname/video-splitter.git
-cd video-splitter
+git clone https://github.com/yourname/video-clipping.git
+cd video-clipping
 
 # 安装依赖
 npm install
@@ -151,7 +151,7 @@ export PATH="/path/to/ffmpeg/bin:$PATH"
 ### 项目结构
 
 ```
-video-splitter/
+video-clipping/
 ├── src/                    # React 前端源码
 │   ├── components/         # UI 组件
 │   │   ├── FileDropZone.tsx    # 文件拖拽上传
@@ -265,7 +265,7 @@ npm run lint
 
 如有问题或建议，请通过以下方式联系：
 
-- 提交 [GitHub Issue](https://github.com/yourname/video-splitter/issues)
+- 提交 [GitHub Issue](https://github.com/yourname/video-clipping/issues)
 - 发送邮件至 your-email@example.com
 
 ---
